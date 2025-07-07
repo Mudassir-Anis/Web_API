@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using WebApi_API.Data;
-using WebApi_API.Logging;
 using WebApi_API.Models;
 using WebApi_API.Models.DTO;
 
@@ -12,16 +13,18 @@ namespace WebApi_API.Controllers
     [ApiController]
     public class VillaApiController : ControllerBase
     {
-        public readonly ILogging _logger;
-        public VillaApiController(ILogging logger)
+        private readonly ApplicationDbContext _db;
+        private readonly IMapper _mapper;
+        public VillaApiController(ApplicationDbContext db, IMapper mapper)
         {
-            _logger = logger;
+            _db = db;
+            _mapper = mapper;
         }
         [HttpGet]
-        public ActionResult<VilaDto> GetVillas()
+        public ActionResult<IEnumerable<VilaDto>> GetVillas()
         {
-            _logger.Log("Getting all villas","success");
-            return Ok(VilaStore.vilaList);
+            
+            return Ok(_db.Villas.ToList());
         }
 
         [HttpGet("{id}", Name = "GetVilla")]
@@ -32,10 +35,10 @@ namespace WebApi_API.Controllers
         {
             if (id == 0)
             {
-                _logger.Log($"Invalid villa ID provided: {id}","error");
+
                 return BadRequest();
             }
-            var vila = VilaStore.vilaList.FirstOrDefault(u => u.Id == id);
+            var vila = _db.Villas.FirstOrDefault(u => u.Id == id);
             if (vila == null)
             {
                 return NotFound();
@@ -63,9 +66,12 @@ namespace WebApi_API.Controllers
             {
                 return StatusCode(StatusCodes.Status500InternalServerError);
             }
-            vilaDto.Id = VilaStore.vilaList.OrderByDescending(u => u.Id).FirstOrDefault().Id + 1;
-            VilaStore.vilaList.Add(vilaDto);
-            return CreatedAtRoute("GetVilla", new { id = vilaDto.Id }, vilaDto);
+            int Id = _db.Villas.OrderByDescending(u => u.Id).FirstOrDefault().Id + 1;
+            
+            var vila = _mapper.Map<Vila>(vilaDto);
+            _db.Villas.Add(vila);
+            _db.SaveChanges();
+            return CreatedAtRoute("GetVilla", new { id = Id }, vila);
         }
 
         [HttpDelete("{id}")]
@@ -78,26 +84,37 @@ namespace WebApi_API.Controllers
             {
                 return BadRequest();
             }
-            var vila = VilaStore.vilaList.FirstOrDefault(u => u.Id == id);
+            var vila = _db.Villas.FirstOrDefault(u => u.Id == id);
             if (vila == null)
             {
                 return NotFound();
             }
-            VilaStore.vilaList.Remove(vila);
+            _db.Villas.Remove(vila);
+            _db.SaveChanges();
             return NoContent();
         }
         [HttpPut("{id}", Name = "UpdateVilla")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public IActionResult UpdateVilla(int id, [FromBody] VilaDto vilaDto)
         {
             if (vilaDto == null || id != vilaDto.Id)
             {
                 return BadRequest();
             }
-            var vila = VilaStore.vilaList.FirstOrDefault(u => u.Id == id);
-            vila.Name = vilaDto.Name;
-            vila.Occupancy = vilaDto.Occupancy;
-            vila.SqFt = vilaDto.SqFt;
+
+            var vila = _db.Villas.FirstOrDefault(u => u.Id == id);
+            if(vila == null)
+            {
+                return BadRequest();
+            }
+            //vila.Name = vilaDto.Name;
+            //vila.Occupancy = vilaDto.Occupancy;
+            //vila.Sqft = vilaDto.Sqft;
+            _mapper.Map(vilaDto,vila);
+
+            _db.Villas.Update(vila);
+            _db.SaveChanges();
             return NoContent();
         }
 
@@ -112,16 +129,21 @@ namespace WebApi_API.Controllers
                 return BadRequest();
             }
 
-            var vila = VilaStore.vilaList.FirstOrDefault(u => u.Id == id);
+            var vila = _db.Villas.AsNoTracking().FirstOrDefault(u => u.Id == id);
             if(vila == null)
             {
                 return NotFound();
             }
-            vilaPatch.ApplyTo(vila, ModelState);
+            var vilaDto = _mapper.Map<VilaDto>(vila);
+            vilaPatch.ApplyTo(vilaDto, ModelState);
             if(!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
+            //_mapper.Map(vilaDto,vila);
+            vila = _mapper.Map<Vila>(vilaDto);
+            _db.Villas.Update(vila);
+            _db.SaveChanges();
             return NoContent();
         }
 
